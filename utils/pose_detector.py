@@ -1,83 +1,56 @@
 """
 utils/pose_detector.py — MediaPipe Pose Detection Wrapper
 ==========================================================
-YOUR ROLE: Pose Detection
-This file is your responsibility! It wraps Google's MediaPipe Pose library
-into a clean, easy-to-use class that the rest of the team can import.
+UPDATED for MediaPipe 0.10.30+
+The old mp.solutions.pose API was removed. This file uses the new Tasks API.
+
+YOUR ROLE: Pose Detection (Person 2)
 
 What this file does:
-    1. Initializes MediaPipe Pose (the AI model that finds body keypoints)
+    1. Initializes MediaPipe PoseLandmarker (the new AI model)
     2. Detects body landmarks (keypoints) in each webcam frame
-    3. Draws the skeleton overlay on the frame so the user can see it
+    3. Draws the skeleton overlay on the frame
     4. Returns landmark data in a format the exercise modules can use
 
 How MediaPipe Landmarks Work:
 -----------------------------
-MediaPipe Pose detects 33 specific points on the human body, called LANDMARKS.
-Each landmark represents a body part (like your left knee or right shoulder).
+MediaPipe detects 33 points on the human body. Each landmark has:
+    x          — Left/right position (0.0 = left edge, 1.0 = right edge)
+    y          — Up/down position   (0.0 = top edge,  1.0 = bottom edge)
+    z          — Depth (less reliable)
+    visibility — Confidence score (0.0–1.0)
 
-Every landmark has three coordinates:
-    x  — How far LEFT or RIGHT the point is (0.0 = left edge, 1.0 = right edge)
-    y  — How far UP or DOWN the point is   (0.0 = top edge,  1.0 = bottom edge)
-    z  — Depth (how far toward/away from the camera — less reliable, use carefully)
-    visibility — How confident MediaPipe is that this point is visible (0.0–1.0)
-
-These x/y values are NORMALIZED, meaning they're percentages of the frame size,
-not pixel coordinates. To get pixel coordinates, multiply by the frame width/height.
-
-The 33 landmarks are numbered 0–32. Here are the most important ones for exercise analysis:
-
-    NOSE            = 0
-    LEFT_EYE        = 1      RIGHT_EYE         = 4
-    LEFT_EAR        = 7      RIGHT_EAR         = 8
-    LEFT_SHOULDER   = 11     RIGHT_SHOULDER    = 12
-    LEFT_ELBOW      = 13     RIGHT_ELBOW       = 14
-    LEFT_WRIST      = 15     RIGHT_WRIST       = 16
-    LEFT_HIP        = 23     RIGHT_HIP         = 24
-    LEFT_KNEE       = 25     RIGHT_KNEE        = 26
-    LEFT_ANKLE      = 27     RIGHT_ANKLE       = 28
-    LEFT_HEEL       = 29     RIGHT_HEEL        = 30
-    LEFT_FOOT_INDEX = 31     RIGHT_FOOT_INDEX  = 32
-
-For exercise analysis, you'll mostly care about:
-    - Squats:      Hips (23/24), Knees (25/26), Ankles (27/28), Shoulders (11/12)
-    - Push-ups:    Shoulders (11/12), Elbows (13/14), Wrists (15/16), Hips (23/24)
-    - Bicep curls: Shoulders (11/12), Elbows (13/14), Wrists (15/16)
+Important landmark indices:
+    LEFT_SHOULDER=11   RIGHT_SHOULDER=12
+    LEFT_ELBOW=13      RIGHT_ELBOW=14
+    LEFT_WRIST=15      RIGHT_WRIST=16
+    LEFT_HIP=23        RIGHT_HIP=24
+    LEFT_KNEE=25       RIGHT_KNEE=26
+    LEFT_ANKLE=27      RIGHT_ANKLE=28
 """
 
-import cv2          # OpenCV — for drawing on frames and color conversion
+import cv2
+import numpy as np
+import urllib.request
+import os
+
 import mediapipe as mp
-
-# Compatibility fix for MediaPipe 0.10.30+
-# The new versions moved solutions to a different path
-import mediapipe.python.solutions.pose as _pose
-import mediapipe.python.solutions.drawing_utils as _drawing
-import mediapipe.python.solutions.drawing_styles as _drawing_styles
-  # MediaPipe — Google's AI pose detection library
-import numpy as np  # NumPy — for coordinate math
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision
+from mediapipe.tasks.python.vision import (
+    PoseLandmarker,
+    PoseLandmarkerOptions,
+    RunningMode
+)
 
 
 # ==============================================================================
-# MEDIAPIPE LANDMARK INDEX CONSTANTS
-# Using named constants instead of "magic numbers" makes the code readable.
-# Instead of writing landmarks[23], you can write landmarks[LM.LEFT_HIP]
+# LANDMARK INDEX CONSTANTS
+# Same as before — use these in exercise files for readable code
 # ==============================================================================
-
-class _Solutions:
-    pose = _pose
-    drawing_utils = _drawing
-    drawing_styles = _drawing_styles
-
-mp.solutions = _Solutions()
 
 class LM:
-    """
-    Shorthand constants for MediaPipe's 33 pose landmark indices.
-    Use these when accessing landmarks so your code is self-documenting.
-
-    Example:
-        hip_landmark = landmarks[LM.LEFT_HIP]
-    """
+    """Shorthand constants for MediaPipe's 33 pose landmark indices."""
     NOSE            = 0
     LEFT_EYE_INNER  = 1
     LEFT_EYE        = 2
@@ -114,275 +87,236 @@ class LM:
 
 
 # ==============================================================================
+# MODEL DOWNLOAD HELPER
+# The new Tasks API requires a .task model file downloaded separately.
+# This function downloads it automatically if it's not already present.
+# ==============================================================================
+
+MODEL_PATH = "pose_landmarker_full.task"
+MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+
+def ensure_model_exists():
+    """
+    Downloads the MediaPipe pose model file if it doesn't already exist.
+    Only needs to run once — after that the file is cached locally.
+    """
+    if not os.path.exists(MODEL_PATH):
+        print(f"[PoseDetector] Downloading pose model to '{MODEL_PATH}'...")
+        print("[PoseDetector] This only happens once. Please wait...")
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        print("[PoseDetector] Model downloaded successfully!")
+    else:
+        print(f"[PoseDetector] Model file found: '{MODEL_PATH}'")
+
+
+# ==============================================================================
 # THE MAIN POSEDETECTOR CLASS
+# Same interface as before — .detect(frame) still returns a list of 33 landmarks
 # ==============================================================================
 
 class PoseDetector:
     """
-    A wrapper around MediaPipe Pose that makes it easy to detect body landmarks
-    in webcam frames and draw a skeleton overlay on top.
+    Wraps MediaPipe PoseLandmarker (Tasks API) for easy use by the team.
 
-    Usage (how your teammates will use this):
+    Usage — identical to the old version:
         detector = PoseDetector()
-        landmarks = detector.detect(frame)   # Pass in a webcam frame
+        landmarks = detector.detect(frame)
         if landmarks:
             hip = landmarks[LM.LEFT_HIP]
-            print(hip.x, hip.y)  # Normalized coordinates (0.0–1.0)
+            print(hip.x, hip.y)
     """
 
     def __init__(self, detection_confidence=0.5, tracking_confidence=0.5):
         """
-        Sets up the MediaPipe Pose model.
+        Sets up the MediaPipe PoseLandmarker model.
 
         Args:
-            detection_confidence (float): How confident MediaPipe must be to say
-                "yes, I see a person here." Range: 0.0–1.0. Higher = more strict.
-                0.5 is a good starting point. Lower it if detection is spotty.
-
-            tracking_confidence (float): Once a person is found, how confident
-                MediaPipe must be to keep tracking them frame-to-frame.
-                Range: 0.0–1.0. Lower = smoother but might track wrong points.
+            detection_confidence (float): Min confidence to detect a person (0.0–1.0)
+            tracking_confidence  (float): Min confidence to keep tracking  (0.0–1.0)
         """
-        print("[PoseDetector] Initializing MediaPipe Pose...")
+        print("[PoseDetector] Initializing MediaPipe PoseLandmarker (Tasks API)...")
 
-        # mp.solutions.pose gives us access to the Pose model
-        self.mp_pose = mp.solutions.pose
+        # Download model file if needed
+        ensure_model_exists()
 
-        # mp.solutions.drawing_utils lets us draw the skeleton lines and dots
-        self.mp_drawing = mp.solutions.drawing_utils
+        # --- Configure the PoseLandmarker ---
+        base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
 
-        # mp.solutions.drawing_styles gives us pre-made colors for the skeleton
-        self.mp_drawing_styles = mp.solutions.drawing_styles
-
-        # Create the actual Pose model instance
-        # static_image_mode=False means we're processing a VIDEO (not single images)
-        # This lets MediaPipe track poses across frames, which is faster and smoother
-        self.pose = self.mp_pose.Pose(
-            static_image_mode=False,
-            model_complexity=1,          # 0=fastest/least accurate, 2=slowest/most accurate
-            smooth_landmarks=True,       # Smooths jitter between frames — keep this True
-            enable_segmentation=False,   # We don't need body segmentation for this app
-            min_detection_confidence=detection_confidence,
-            min_tracking_confidence=tracking_confidence
+        options = PoseLandmarkerOptions(
+            base_options=base_options,
+            # VIDEO mode is used for webcam streams — it tracks across frames
+            # (faster and smoother than IMAGE mode which treats each frame independently)
+            running_mode=RunningMode.VIDEO,
+            min_pose_detection_confidence=detection_confidence,
+            min_pose_presence_confidence=detection_confidence,
+            min_tracking_confidence=tracking_confidence,
+            num_poses=1,            # We only need to track one person
+            output_segmentation_masks=False
         )
+
+        # Create the landmarker instance
+        self.landmarker = PoseLandmarker.create_from_options(options)
+
+        # Store drawing utilities for skeleton overlay
+        self.mp_drawing       = vision.drawing_utils
+        self.mp_drawing_styles = vision.drawing_styles
+
+        # Frame counter — VIDEO mode requires a timestamp per frame
+        self._frame_index = 0
 
         print("[PoseDetector] Ready!")
 
     def detect(self, frame, draw_skeleton=True):
         """
-        Analyzes a single webcam frame and returns the detected body landmarks.
-
-        This is the main method your teammates will call every frame.
+        Analyzes a webcam frame and returns detected body landmarks.
 
         Args:
-            frame (numpy.ndarray): A BGR image from OpenCV (what cv2.VideoCapture gives you).
-                                   Shape is (height, width, 3).
-            draw_skeleton (bool): If True, draws the pose skeleton directly onto the frame.
-                                  The frame is modified IN PLACE, so the caller sees the
-                                  skeleton without needing to do anything extra.
+            frame (numpy.ndarray): BGR image from OpenCV.
+            draw_skeleton (bool): If True, draws skeleton on the frame in-place.
 
         Returns:
             list or None:
-                - If a pose is detected: a list of 33 landmark objects.
-                  Each landmark has .x, .y, .z (normalized 0.0–1.0) and .visibility.
-                  Access like: landmarks[LM.LEFT_KNEE].x
-                - If no pose is detected: None
-                  (Always check for None before using landmarks!)
-
-        Example:
-            landmarks = detector.detect(frame)
-            if landmarks is not None:
-                knee = landmarks[LM.LEFT_KNEE]
-                print(f"Left knee is at {knee.x:.2f}, {knee.y:.2f}")
+                - List of 33 landmark objects if a pose is detected.
+                  Each has .x, .y, .z (0.0–1.0) and .visibility.
+                - None if no pose detected.
         """
 
-        # --- Step 1: Convert color space ---
-        # OpenCV loads frames in BGR (Blue-Green-Red) order.
-        # MediaPipe expects RGB (Red-Green-Blue) order.
-        # We MUST convert, otherwise colors will look wrong and detection suffers.
+        # --- Convert BGR (OpenCV) → RGB (MediaPipe) ---
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # --- Step 2: Optional performance trick ---
-        # Marking the image as not writeable before processing can speed things up
-        # slightly because MediaPipe doesn't need to worry about the array changing.
-        rgb_frame.flags.writeable = False
+        # --- Wrap in MediaPipe Image object ---
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-        # --- Step 3: Run pose detection ---
-        # This is where the AI magic happens! MediaPipe analyzes the frame and
-        # finds all 33 body landmark positions.
-        results = self.pose.process(rgb_frame)
+        # --- Calculate timestamp in milliseconds ---
+        # VIDEO mode requires an increasing timestamp for each frame
+        timestamp_ms = self._frame_index * 33  # ~30fps = 33ms per frame
+        self._frame_index += 1
 
-        # --- Step 4: Re-enable writing so we can draw on the frame ---
-        rgb_frame.flags.writeable = True
+        # --- Run pose detection ---
+        result = self.landmarker.detect_for_video(mp_image, timestamp_ms)
 
-        # --- Step 5: Check if a pose was actually detected ---
-        # results.pose_landmarks is None if no person was found in the frame
-        if results.pose_landmarks is None:
-            # No person detected — return None so the caller knows
+        # --- Check if any pose was detected ---
+        if not result.pose_landmarks or len(result.pose_landmarks) == 0:
             return None
 
-        # --- Step 6: Draw the skeleton overlay (optional) ---
+        # --- Get the first person's landmarks ---
+        # result.pose_landmarks is a list of poses (we only track 1 person)
+        landmarks = result.pose_landmarks[0]  # List of 33 NormalizedLandmark objects
+
+        # --- Draw skeleton if requested ---
         if draw_skeleton:
-            self._draw_skeleton(frame, results)
+            self._draw_skeleton(frame, result)
 
-        # --- Step 7: Return the landmark list ---
-        # results.pose_landmarks.landmark is a list of 33 NormalizedLandmark objects.
-        # Each one has .x, .y, .z (all 0.0–1.0) and .visibility (0.0–1.0).
-        return results.pose_landmarks.landmark
+        return landmarks
 
-    def _draw_skeleton(self, frame, results):
+    def _draw_skeleton(self, frame, result):
         """
-        Draws the pose skeleton (dots + connecting lines) onto the frame.
-        This modifies the frame IN PLACE — no need to return it.
-
-        This is a "private" method (notice the underscore prefix). It's meant to be
-        called only from inside this class, not by your teammates directly.
-
-        Args:
-            frame (numpy.ndarray): The BGR frame to draw on.
-            results: The raw MediaPipe results object from self.pose.process().
+        Draws pose skeleton onto the frame in-place.
+        Uses OpenCV directly to draw dots and lines — no mediapipe.framework needed.
         """
-        # mp_drawing.draw_landmarks() handles all the drawing for us.
-        # It draws dots at each landmark and lines connecting related landmarks.
-        self.mp_drawing.draw_landmarks(
-            image=frame,
-            landmark_list=results.pose_landmarks,
+        if not result.pose_landmarks:
+            return
 
-            # POSE_CONNECTIONS tells MediaPipe which landmarks to connect with lines
-            # e.g., it knows to draw a line from shoulder to elbow to wrist
-            connections=self.mp_pose.POSE_CONNECTIONS,
+        frame_h, frame_w = frame.shape[:2]
 
-            # Pre-made styles: landmark dots are colored by body part
-            landmark_drawing_spec=self.mp_drawing_styles.get_default_pose_landmarks_style(),
+        # MediaPipe's 33-point body connections (pairs of landmark indices)
+        CONNECTIONS = [
+            (11,12),(11,13),(13,15),(12,14),(14,16),  # Arms
+            (11,23),(12,24),(23,24),                   # Torso
+            (23,25),(25,27),(27,29),(27,31),           # Left leg
+            (24,26),(26,28),(28,30),(28,32),           # Right leg
+            (0,1),(1,2),(2,3),(3,7),                   # Face left
+            (0,4),(4,5),(5,6),(6,8),                   # Face right
+            (9,10),(15,17),(15,19),(15,21),            # Mouth, left hand
+            (16,18),(16,20),(16,22),                   # Right hand
+        ]
 
-            # Connection lines are drawn in a subtle gray-white color
-            connection_drawing_spec=self.mp_drawing.DrawingSpec(
-                color=(200, 200, 200),  # Light gray lines (BGR format)
-                thickness=2,
-                circle_radius=2
-            )
-        )
+        for pose_landmarks in result.pose_landmarks:
+            # Convert normalized coords to pixel coords
+            points = []
+            for lm in pose_landmarks:
+                px = int(lm.x * frame_w)
+                py = int(lm.y * frame_h)
+                points.append((px, py))
+
+            # Draw connection lines first (so dots appear on top)
+            for start_idx, end_idx in CONNECTIONS:
+                if start_idx < len(points) and end_idx < len(points):
+                    cv2.line(frame, points[start_idx], points[end_idx],
+                             (200, 200, 200), 2)  # Light gray lines
+
+            # Draw landmark dots
+            for px, py in points:
+                cv2.circle(frame, (px, py), 4, (0, 255, 0), -1)  # Green dots
 
     def get_pixel_coordinates(self, landmark, frame_width, frame_height):
         """
-        Converts a landmark's normalized coordinates (0.0–1.0) to actual pixel
-        coordinates based on the frame's resolution.
-
-        MediaPipe gives you normalized coordinates, but sometimes you need
-        pixel positions — for example, to draw custom labels or measure distances.
+        Converts normalized landmark coordinates (0.0–1.0) to pixel coordinates.
 
         Args:
-            landmark: A single landmark object (e.g., landmarks[LM.LEFT_KNEE]).
-            frame_width (int): The width of the frame in pixels (e.g., 1280).
-            frame_height (int): The height of the frame in pixels (e.g., 720).
+            landmark: A single landmark object.
+            frame_width (int):  Frame width in pixels.
+            frame_height (int): Frame height in pixels.
 
         Returns:
-            tuple: (x_pixels, y_pixels) as integers.
-
-        Example:
-            knee = landmarks[LM.LEFT_KNEE]
-            kx, ky = detector.get_pixel_coordinates(knee, 1280, 720)
-            cv2.circle(frame, (kx, ky), 10, (0, 255, 0), -1)  # Draw green dot
+            tuple: (x_pixels, y_pixels)
         """
-        x_pixels = int(landmark.x * frame_width)
-        y_pixels = int(landmark.y * frame_height)
-        return (x_pixels, y_pixels)
+        return (int(landmark.x * frame_width), int(landmark.y * frame_height))
 
     def is_landmark_visible(self, landmark, threshold=0.5):
         """
-        Checks whether a specific landmark is reliably visible in the frame.
-
-        MediaPipe gives each landmark a "visibility" score from 0.0 to 1.0.
-        If a body part is behind the person, out of frame, or occluded,
-        visibility will be low. Use this to skip unreliable data.
-
-        Args:
-            landmark: A single landmark object (e.g., landmarks[LM.LEFT_HIP]).
-            threshold (float): Minimum visibility score to consider "visible".
-                               0.5 is a reasonable default.
+        Checks if a landmark is reliably visible.
 
         Returns:
-            bool: True if the landmark is visible enough to use, False otherwise.
-
-        Example:
-            if detector.is_landmark_visible(landmarks[LM.LEFT_KNEE]):
-                # Safe to use this landmark
-                angle = calculate_angle(...)
+            bool: True if visibility >= threshold.
         """
         return landmark.visibility >= threshold
 
     def close(self):
-        """
-        Releases the MediaPipe Pose resources when you're done.
-        Call this when the app is shutting down to free memory properly.
-
-        Example:
-            detector.close()
-        """
-        self.pose.close()
+        """Releases MediaPipe resources. Call when the app shuts down."""
+        self.landmarker.close()
         print("[PoseDetector] Resources released.")
 
 
 # ==============================================================================
 # STANDALONE TEST
-# Run this file directly to verify your webcam and pose detection work:
-#     python utils/pose_detector.py
-#
-# You should see a window with your webcam feed and a skeleton drawn over you.
-# Press 'Q' to quit.
+# Run: py -3.11 utils/pose_detector.py
+# You should see a webcam window with a skeleton. Press Q to quit.
 # ==============================================================================
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  PoseDetector Standalone Test")
+    print("  PoseDetector Standalone Test (MediaPipe 0.10.30+)")
     print("  Stand in front of your webcam and move around!")
     print("  Press Q to quit.")
     print("=" * 60)
 
-    # --- Initialize the detector ---
-    detector = PoseDetector(
-        detection_confidence=0.5,
-        tracking_confidence=0.5
-    )
+    detector = PoseDetector(detection_confidence=0.5, tracking_confidence=0.5)
 
-    # --- Open the webcam ---
-    # 0 = default webcam. Change to 1 or 2 if you have multiple cameras.
     cap = cv2.VideoCapture(0)
-
     if not cap.isOpened():
-        print("[ERROR] Could not open webcam. Make sure it's connected and not in use.")
+        print("[ERROR] Could not open webcam.")
         exit(1)
 
-    # Set a reasonable resolution for testing
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     print("[TEST] Webcam opened. Starting detection loop...")
 
-    # --- Main test loop ---
     while True:
         success, frame = cap.read()
-
         if not success:
-            print("[WARNING] Couldn't read frame. Retrying...")
             continue
 
-        # Flip horizontally so it acts like a mirror
         frame = cv2.flip(frame, 1)
-
-        # Run pose detection (skeleton will be drawn on frame automatically)
         landmarks = detector.detect(frame, draw_skeleton=True)
 
-        # --- Display landmark info on screen ---
-        frame_h, frame_w, _ = frame.shape  # Get frame dimensions
+        frame_h, frame_w, _ = frame.shape
 
         if landmarks is not None:
-            # Show a "DETECTED" status in green
             cv2.putText(frame, "Pose Detected!", (20, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 220, 0), 3)
 
-            # Show some example landmark coordinates as text on screen
-            # This helps you verify that the data looks reasonable
             debug_landmarks = {
                 "L.Shoulder": LM.LEFT_SHOULDER,
                 "L.Hip":      LM.LEFT_HIP,
@@ -390,37 +324,28 @@ if __name__ == "__main__":
                 "L.Ankle":    LM.LEFT_ANKLE,
             }
 
-            y_offset = 100  # Starting Y position for text
+            y_offset = 100
             for name, index in debug_landmarks.items():
                 lm = landmarks[index]
-                # Convert to pixel coords for display
                 px, py = detector.get_pixel_coordinates(lm, frame_w, frame_h)
                 visible = "✓" if detector.is_landmark_visible(lm) else "✗"
                 text = f"{name}: ({px}, {py})  vis={lm.visibility:.2f} {visible}"
                 cv2.putText(frame, text, (20, y_offset),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 y_offset += 35
-
         else:
-            # No pose found — show a warning in red
             cv2.putText(frame, "No pose detected — step into view!", (20, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
-        # --- Show usage instructions ---
         cv2.putText(frame, "Press Q to quit", (20, frame_h - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (180, 180, 180), 2)
 
-        # --- Display the frame in a window ---
-        cv2.imshow("PoseDetector Test — utils/pose_detector.py", frame)
+        cv2.imshow("PoseDetector Test", frame)
 
-        # --- Check for quit key ---
-        # cv2.waitKey(1) waits 1ms for a keypress. & 0xFF normalizes the key code.
         if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("[TEST] Q pressed — quitting.")
             break
 
-    # --- Cleanup ---
     cap.release()
     cv2.destroyAllWindows()
     detector.close()
-    print("[TEST] Test complete. If you saw your skeleton, everything is working!")
+    print("[TEST] Done!")
