@@ -46,7 +46,14 @@ For exercise analysis, you'll mostly care about:
 """
 
 import cv2          # OpenCV — for drawing on frames and color conversion
-import mediapipe as mp  # MediaPipe — Google's AI pose detection library
+import mediapipe as mp
+
+# Compatibility fix for MediaPipe 0.10.30+
+# The new versions moved solutions to a different path
+import mediapipe.python.solutions.pose as _pose
+import mediapipe.python.solutions.drawing_utils as _drawing
+import mediapipe.python.solutions.drawing_styles as _drawing_styles
+  # MediaPipe — Google's AI pose detection library
 import numpy as np  # NumPy — for coordinate math
 
 
@@ -55,6 +62,13 @@ import numpy as np  # NumPy — for coordinate math
 # Using named constants instead of "magic numbers" makes the code readable.
 # Instead of writing landmarks[23], you can write landmarks[LM.LEFT_HIP]
 # ==============================================================================
+
+class _Solutions:
+    pose = _pose
+    drawing_utils = _drawing
+    drawing_styles = _drawing_styles
+
+mp.solutions = _Solutions()
 
 class LM:
     """
