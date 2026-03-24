@@ -1,80 +1,137 @@
-Exercise Form Checker
+# Exercise Form Checker
 
-A real-time computer vision application that helps users maintain correct form during various exercises. Using MediaPipe Pose Landmarker, the app analyzes body movements through a webcam and provides instant feedback to prevent injury and maximize workout efficiency.
-🚀 Features
+An AI-powered desktop application that analyzes workout form using real-time pose detection. This tool uses MediaPipe to detect body landmarks and provides real-time feedback on exercise form for squats, push-ups, and bicep curls.
 
-    Real-time Pose Tracking: Utilizes the Google MediaPipe pose_landmarker_full.task for high-accuracy body tracking.
+## Features
 
-    Multiple Exercises: Built-in logic for checking form on various exercises (e.g., Squats, Pushups, Bicep Curls).
+- **Real-time Pose Detection**: Uses MediaPipe to detect 33 body landmarks in live webcam feed
+- **Exercise Analysis**: Analyzes three exercises:
+  - **Squats**: Checks knee angles, hip angles, and back alignment
+  - **Push-ups**: Validates arm angles, body alignment, and depth
+  - **Bicep Curls**: Monitors elbow and shoulder positioning
+- **Live Feedback**: Displays color-coded coaching messages and form corrections
+- **Rep Counter**: Automatically counts completed repetitions
+- **Desktop UI**: PyQt5-based graphical interface with live video feed
 
-    Visual Feedback: Interactive UI that highlights joint angles and provides corrective cues.
+## Project Structure
 
-    Rep Counter: Automatically tracks and counts completed repetitions.
+```
+exercise-form-checker/
+├── main.py                    # Application entry point
+├── requirements.txt           # Python dependencies
+├── pose_landmarker_full.task  # MediaPipe pose model
+├── exercises/
+│   ├── squat.py              # Squat form analysis logic
+│   ├── pushup.py             # Push-up form analysis logic
+│   └── bicep_curl.py         # Bicep curl form analysis logic
+├── utils/
+│   ├── pose_detector.py      # MediaPipe wrapper and pose detection
+│   ├── angle_calculator.py   # Joint angle calculations
+│   └── feedback.py           # Coaching messages and feedback logic
+├── ui/
+│   └── app_window.py         # PyQt5 desktop UI and window management
+└── README.md                 # This file
+```
 
-🛠️ Tech Stack
+## Requirements
 
-    Python 3.x
+- Python 3.7+
+- Webcam
+- Dependencies listed in `requirements.txt`:
+  - mediapipe >= 0.10.30
+  - opencv-python
+  - numpy
+  - pyqt5
 
-    MediaPipe: For human pose estimation.
+## Installation
 
-    OpenCV: For video processing and image manipulation.
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd exercise-form-checker
+   ```
 
-    NumPy: For calculating joint angles and geometric logic.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-📦 Installation
+## Usage
 
-    Clone the repository:
-    Bash
+1. Run the application:
+   ```bash
+   python main.py
+   ```
 
-    git clone https://github.com/iChit111/exercise-form-checker.git
-    cd exercise-form-checker
+2. Select an exercise (Squat, Push-up, or Bicep Curl) from the dropdown menu
 
-    Create a virtual environment (optional but recommended):
-    Bash
+3. Click "Start" to begin form analysis
 
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
+4. Position yourself in front of the webcam with good lighting
 
-    Install dependencies:
-    Bash
+5. The application will:
+   - Display your skeleton overlay
+   - Show real-time feedback on your form
+   - Count completed repetitions
+   - Highlight form issues with coaching tips
 
-    pip install -r requirements.txt
+6. Click "Stop" to end the session
 
-🖥️ Usage
+## How It Works
 
-Run the main application:
-Bash
+### Pose Detection
+The application uses MediaPipe's PoseLandmarker to detect 33 body keypoints in real-time. Each landmark provides:
+- X/Y position (normalized 0.0-1.0)
+- Z depth coordinate
+- Visibility confidence score
 
-python main.py
+### Exercise Analysis
+Each exercise module analyzes relevant joint angles:
+- **Angles are calculated** between three points (e.g., Hip → Knee → Ankle)
+- **Form validation** checks if angles fall within acceptable ranges
+- **Rep counting** tracks when users complete full repetitions
+- **Feedback generation** provides specific coaching messages
 
-    Ensure your webcam is connected and you are in a well-lit area.
+### Real-time Feedback
+The UI displays:
+- Live video feed with skeleton overlay
+- Color-coded feedback messages (green = good form, red = needs correction)
+- Current repetition count
+- Real-time form corrections
 
-    Step back so your entire body (or the relevant limbs) is visible in the frame.
+## Technical Architecture
 
-    Select an exercise from the menu and start your set!
+- **MediaPipe**: AI-based pose detection and body landmark recognition
+- **OpenCV**: Video capture and frame processing
+- **NumPy**: Mathematical calculations for joint angles
+- **PyQt5**: Desktop GUI and user interface
 
-📂 Project Structure
+## Performance Considerations
 
-    main.py: The entry point of the application.
+- Run in good lighting conditions for best pose detection
+- Ensure full body visibility in camera frame
+- Recommended: webcam resolution 640x480 or higher
+- Application runs pose detection on each video frame for real-time feedback
 
-    exercises/: Contains logic for specific exercise form validation (angles, thresholds).
+## Supported Exercises
 
-    ui/: Handles the graphical overlays and user interface components.
+### Squat
+Analyzes knee angle (90-110° at bottom), hip angle (80-100°), and spine alignment.
 
-    utils/: Helper functions for mathematical calculations (e.g., calculating angles between landmarks).
+### Push-up
+Validates elbow angle, body alignment, and full extension/flexion range.
 
-    pose_landmarker_full.task: The pre-trained MediaPipe model bundle.
+### Bicep Curl
+Monitors elbow positioning, shoulder stability, and proper curl range of motion.
 
-🤝 Contributing
+## Future Enhancements
 
-Contributions are welcome! If you'd like to add a new exercise or improve the detection logic:
+- Additional exercises (deadlifts, lunges, shoulder press)
+- Form history and progress tracking
+- Video recording and playback
+- Mobile app version
+- Multiplayer form comparison
 
-    Fork the Project
+## Contributors
 
-    Create your Feature Branch (git checkout -b feature/AmazingFeature)
-
-    Commit your Changes (git commit -m 'Add some AmazingFeature')
-
-    Push to the Branch (git push origin feature/AmazingFeature)
-
-    Open a Pull Request
+This project was developed as a collaborative exercise in AI-powered fitness technology.
